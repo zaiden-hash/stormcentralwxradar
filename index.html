@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StormWatch — Personal Weather Radar</title>
+<link href="https://cdn.maptiler.com/maptiler-sdk-js/v2.3.0/maptiler-sdk.css" rel="stylesheet">
+<script src="https://cdn.maptiler.com/maptiler-sdk-js/v2.3.0/maptiler-sdk.umd.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0a0c10; --surface: #111318; --surface2: #181c24; --border: #2a2f3d;
+  --text: #e2e8f0; --text-muted: #6b7592; --accent: #38bdf8; --accent2: #818cf8;
+  --red: #ef4444; --orange: #f97316; --green: #22c55e;
+}
+body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; }
+
+/* ── TOKEN SCREEN ── */
+#token-screen { position: fixed; inset: 0; z-index: 9999; background: var(--bg); display: flex; align-items: center; justify-content: center; padding: 24px; }
+.token-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 48px 40px; max-width: 480px; width: 100%; box-shadow: 0 0 80px rgba(56,189,248,0.06); }
+.token-card .logo { font-family: 'Space Mono', monospace; font-size: 22px; color: var(--accent); margin-bottom: 6px; }
+.token-card .logo span { color: var(--text-muted); }
+.token-card h1 { font-size: 28px; font-weight: 600; margin-bottom: 10px; line-height: 1.2; }
+.token-card p { color: var(--text-muted); font-size: 14px; line-height: 1.6; margin-bottom: 28px; }
+.token-card p a { color: var(--accent); text-decoration: none; }
+.token-card p a:hover { text-decoration: underline; }
+.token-card label { display: block; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+.token-card input { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; font-size: 13px; font-family: 'Space Mono', monospace; color: var(--text); outline: none; transition: border-color 0.2s; }
+.token-card input:focus { border-color: var(--accent); }
+.token-card input::placeholder { color: var(--text-muted); font-size: 12px; }
+.token-card button { margin-top: 16px; width: 100%; background: var(--accent); color: #0a0c10; border: none; border-radius: 8px; padding: 13px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: 'Space Mono', monospace; letter-spacing: 0.03em; transition: opacity 0.2s, transform 0.1s; }
+.token-card button:hover { opacity: 0.9; }
+.token-card button:active { transform: scale(0.98); }
+#token-error { color: var(--red); font-size: 12px; margin-top: 8px; display: none; }
+
+/* ── MAP ── */
+#map { position: absolute; inset: 0; }
+
+/* ── HEADER ── */
+#header {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 20px;
+  background: linear-gradient(to bottom, rgba(10,12,16,0.95) 0%, rgba(10,12,16,0) 100%);
+  pointer-events: none;
+}
+.header-logo { font-family: 'Space Mono', monospace; font-size: 16px; color: var(--accent); pointer-events: all; }
+.header-logo span { color: var(--text-muted); }
+
+/* Clock */
+#clock-wrap {
+  display: flex; align-items: center; gap: 6px;
+  font-family: 'Space Mono', monospace; font-size: 13px;
+  background: rgba(17,19,24,0.75); backdrop-filter: blur(8px);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 5px 12px; pointer-events: all;
+}
+#status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; flex-shrink: 0; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+#clock-local { color: var(--text); }
+.clock-sep { color: var(--border); padding: 0 2px; }
+#clock-zulu { color: #64748b; }
+.clock-z-label { font-size: 10px; color: var(--text-muted); vertical-align: middle; margin-left: 2px; }
+
+/* ── LEFT PANEL ── */
+#left-panel { position: absolute; top: 60px; left: 16px; z-index: 100; display: flex; flex-direction: column; gap: 8px; width: 200px; }
+
+.panel { background: rgba(17,19,24,0.92); backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.panel-header { padding: 10px 14px; font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+.panel-body { padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+
+/* Station list (compact, no search) */
+#station-list { max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; margin: 0 -14px; padding: 4px 8px; }
+#station-list::-webkit-scrollbar { width: 4px; }
+#station-list::-webkit-scrollbar-track { background: transparent; }
+#station-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.station-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; cursor: pointer; transition: background 0.15s; }
+.station-item:hover { background: rgba(56,189,248,0.08); }
+.station-item.active { background: rgba(56,189,248,0.15); }
+.station-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.station-info { flex: 1; min-width: 0; }
+.station-id { font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 700; color: var(--accent); }
+.station-name { font-size: 10px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Toggles */
+.toggle-row { display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+.toggle-row:hover .toggle-label { color: var(--text); }
+.toggle-label { font-size: 13px; color: #a0aec0; display: flex; align-items: center; gap: 8px; transition: color 0.15s; }
+.toggle-label .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.toggle { position: relative; width: 34px; height: 18px; flex-shrink: 0; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-track { position: absolute; inset: 0; background: var(--border); border-radius: 9px; transition: background 0.2s; cursor: pointer; }
+.toggle-track::after { content:''; position:absolute; left:3px; top:3px; width:12px; height:12px; border-radius:50%; background:#fff; transition:transform 0.2s; }
+.toggle input:checked + .toggle-track { background: var(--accent); }
+.toggle input:checked + .toggle-track::after { transform: translateX(16px); }
+
+/* ── KEYBIND HINT ── */
+#keybind-hint {
+  position: absolute; top: 60px; right: 16px; z-index: 100;
+}
+.keybind-panel { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; }
+.kb-row { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-muted); }
+.kb-key { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text); flex-shrink: 0; }
+.kb-key.active-key { border-color: var(--accent); color: var(--accent); background: rgba(56,189,248,0.1); }
+.kb-label { color: var(--text-muted); }
+
+/* ── ACTIVE STATION BADGE ── */
+#active-station-badge { position: absolute; bottom: 100px; left: 16px; z-index: 100; display: none; }
+.badge-inner { background: rgba(17,19,24,0.92); backdrop-filter: blur(12px); border: 1px solid var(--accent); border-radius: 10px; padding: 10px 14px; }
+.badge-label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; }
+.badge-station { font-family: 'Space Mono', monospace; font-size: 18px; color: var(--accent); font-weight: 700; }
+.badge-desc { font-size: 11px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+.badge-product { font-size: 10px; color: var(--accent2); margin-top: 4px; font-family: 'Space Mono', monospace; }
+
+/* ── RADAR TIME ── */
+#radar-time { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); z-index: 100; background: rgba(17,19,24,0.85); backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: 8px; padding: 6px 14px; font-size: 11px; font-family: 'Space Mono', monospace; color: var(--text-muted); display: none; white-space: nowrap; }
+
+/* ── REFRESH ── */
+#refresh-btn { position: absolute; bottom: 100px; right: 16px; z-index: 100; background: rgba(17,19,24,0.92); backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; color: var(--text-muted); font-size: 12px; cursor: pointer; font-family: 'DM Sans', sans-serif; font-weight: 500; display: flex; align-items: center; gap: 8px; transition: color 0.2s, border-color 0.2s; white-space: nowrap; }
+#refresh-btn:hover { color: var(--text); border-color: var(--accent); }
+#refresh-btn svg { transition: transform 0.5s; }
+#refresh-btn:hover svg { transform: rotate(180deg); }
+
+/* ── LOADING ── */
+#loading-overlay { position: absolute; inset: 0; z-index: 200; background: var(--bg); display: none; align-items: center; justify-content: center; flex-direction: column; gap: 12px; transition: opacity 0.4s; }
+#loading-overlay.show { display: flex; opacity: 1; }
+#loading-overlay.hide { opacity: 0; }
+.spinner { width: 32px; height: 32px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#loading-overlay p { color: var(--text-muted); font-size: 13px; }
+
+/* ── STATION MARKERS ── */
+.radar-marker { width: 9px; height: 9px; border-radius: 50%; background: #38bdf8; border: 2px solid rgba(56,189,248,0.3); cursor: pointer; transition: transform 0.15s; }
+.radar-marker:hover { transform: scale(1.7); }
+.radar-marker.active { background: #f97316; border-color: rgba(249,115,22,0.5); transform: scale(1.5); box-shadow: 0 0 10px rgba(249,115,22,0.6); }
+
+/* ── ALERT COUNT ── */
+#alert-count { display: inline-flex; align-items: center; justify-content: center; background: var(--red); color: white; font-size: 10px; font-weight: 700; border-radius: 9px; padding: 1px 6px; font-family: 'Space Mono', monospace; }
+#station-count { font-size: 10px; color: var(--text-muted); font-family: 'Space Mono', monospace; }
+
+/* ── POPUP ── */
+.maplibregl-popup-content { background: var(--surface2) !important; border: 1px solid var(--border) !important; border-radius: 10px !important; padding: 14px 16px !important; color: var(--text) !important; font-family: 'DM Sans', sans-serif !important; max-width: 280px; box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important; }
+.maplibregl-popup-tip { display: none !important; }
+.maplibregl-popup-close-button { color: var(--text-muted) !important; font-size: 16px !important; top: 8px !important; right: 10px !important; }
+.popup-event { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+.popup-area { font-size: 12px; color: #8899bb; margin-bottom: 8px; line-height: 1.4; }
+.popup-time { font-size: 11px; color: #6b7592; font-family: 'Space Mono', monospace; }
+.popup-severity { display: inline-block; margin-top: 8px; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* Hide MapTiler compass only (keep no zoom buttons since we don't add NavigationControl with zoom) */
+.maplibregl-ctrl-top-right { z-index: 100 !important; }
+
+/* ── BOTTOM LEGEND BAR ── */
+#legend-bar {
+  position: absolute; bottom: 0; left: 0; right: 0; z-index: 100;
+  background: rgba(10,12,16,0.92); backdrop-filter: blur(10px);
+  border-top: 1px solid var(--border);
+  padding: 8px 20px;
+  display: none;
+  align-items: center;
+  gap: 20px;
+}
+#legend-bar.visible { display: flex; }
+
+.legend-product-name {
+  font-family: 'Space Mono', monospace; font-size: 11px;
+  color: var(--accent); white-space: nowrap; flex-shrink: 0;
+  min-width: 120px;
+}
+
+.legend-scale-wrap { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.legend-gradient { height: 14px; border-radius: 4px; width: 100%; }
+.legend-ticks { display: flex; justify-content: space-between; }
+.legend-tick { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-muted); }
+
+.legend-unit {
+  font-family: 'Space Mono', monospace; font-size: 10px;
+  color: var(--text-muted); white-space: nowrap; flex-shrink: 0;
+}
+
+/* Alert legend row (compact, inline) */
+.alert-legend-row {
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0; flex-wrap: wrap;
+  border-left: 1px solid var(--border); padding-left: 20px;
+}
+.al-item { display: flex; align-items: center; gap: 4px; }
+.al-swatch { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.al-label { font-size: 9px; color: var(--text-muted); white-space: nowrap; }
+
+/* ── KEYBIND TOAST ── */
+#keybind-toast {
+  position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%);
+  z-index: 500; background: rgba(17,19,24,0.95);
+  border: 1px solid var(--accent); border-radius: 8px;
+  padding: 7px 16px; font-family: 'Space Mono', monospace; font-size: 12px;
+  color: var(--accent); pointer-events: none; opacity: 0;
+  transition: opacity 0.25s; white-space: nowrap;
+}
+</style>
+</head>
+<body>
+
+<!-- TOKEN SCREEN -->
+<div id="token-screen">
+  <div class="token-card">
+    <div class="logo">Storm<span>Watch</span> //</div>
+    <h1>Personal Weather Radar</h1>
+    <p>Enter your free MapTiler API key. Get one at <a href="https://cloud.maptiler.com/account/keys" target="_blank">cloud.maptiler.com</a>. Station radar from NWS &amp; IEM — no other keys needed.</p>
+    <label for="token-input">MapTiler API Key</label>
+    <input id="token-input" type="text" placeholder="Paste your API key here…">
+    <div id="token-error"></div>
+    <button onclick="initApp()">Launch StormWatch →</button>
+  </div>
+</div>
+
+<!-- LOADING -->
+<div id="loading-overlay">
+  <div class="spinner"></div>
+  <p id="loading-text">Initializing…</p>
+</div>
+
+<!-- MAP -->
+<div id="map"></div>
+
+<!-- HEADER -->
+<div id="header">
+  <div class="header-logo">Storm<span>Watch</span></div>
+  <div id="clock-wrap">
+    <span id="status-dot"></span>
+    <span id="clock-local">—</span>
+    <span class="clock-sep">|</span>
+    <span id="clock-zulu">—<span class="clock-z-label">Z</span></span>
+  </div>
+</div>
+
+<!-- LEFT PANEL: Stations + Layer Toggles -->
+<div id="left-panel">
+  <div class="panel">
+    <div class="panel-header">
+      <span>Stations</span>
+      <span id="station-count">—</span>
+    </div>
+    <div id="station-list">
+      <div style="color:var(--text-muted);font-size:12px;padding:10px 14px">Loading…</div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-header">Layers</div>
+    <div class="panel-body">
+      <div class="toggle-row" onclick="toggleLayer('radar')">
+        <span class="toggle-label"><span class="dot" style="background:#38bdf8"></span>Radar</span>
+        <label class="toggle"><input type="checkbox" id="toggle-radar" checked><span class="toggle-track"></span></label>
+      </div>
+      <div class="toggle-row" onclick="toggleLayer('alerts')">
+        <span class="toggle-label"><span class="dot" style="background:#f97316"></span>Alerts<span id="alert-count">—</span></span>
+        <label class="toggle"><input type="checkbox" id="toggle-alerts" checked><span class="toggle-track"></span></label>
+      </div>
+      <div class="toggle-row" onclick="toggleLayer('stations')">
+        <span class="toggle-label"><span class="dot" style="background:#38bdf8"></span>Station Dots</span>
+        <label class="toggle"><input type="checkbox" id="toggle-stations" checked><span class="toggle-track"></span></label>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- RIGHT: Keybind hint -->
+<div id="keybind-hint">
+  <div class="panel">
+    <div class="panel-header">Radar Products</div>
+    <div class="keybind-panel" id="kb-panel">
+      <div class="kb-row"><span class="kb-key active-key" id="kb-1">1</span><span class="kb-label">Base Reflectivity</span></div>
+      <div class="kb-row"><span class="kb-key" id="kb-2">2</span><span class="kb-label">Base Velocity</span></div>
+      <div class="kb-row"><span class="kb-key" id="kb-3">3</span><span class="kb-label">Storm Rel. Velocity</span></div>
+      <div class="kb-row"><span class="kb-key" id="kb-4">4</span><span class="kb-label">Corr. Coefficient</span></div>
+      <div class="kb-row" style="margin-top:4px;border-top:1px solid var(--border);padding-top:6px"><span class="kb-key">R</span><span class="kb-label">Refresh</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ACTIVE STATION BADGE -->
+<div id="active-station-badge">
+  <div class="badge-inner">
+    <div class="badge-label">Active Station</div>
+    <div class="badge-station" id="badge-id">—</div>
+    <div class="badge-desc" id="badge-desc">—</div>
+    <div class="badge-product" id="badge-product">—</div>
+  </div>
+</div>
+
+<!-- RADAR TIME -->
+<div id="radar-time"></div>
+
+<!-- REFRESH -->
+<button id="refresh-btn" onclick="refreshAll()">
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>
+  </svg>
+  Refresh
+</button>
+
+<!-- BOTTOM LEGEND BAR -->
+<div id="legend-bar">
+  <div class="legend-product-name" id="legend-product-name">Base Reflectivity</div>
+  <div class="legend-scale-wrap">
+    <div class="legend-gradient" id="legend-gradient"></div>
+    <div class="legend-ticks" id="legend-ticks"></div>
+  </div>
+  <div class="legend-unit" id="legend-unit">dBZ</div>
+  <div class="alert-legend-row" id="alert-legend-row"></div>
+</div>
+
+<!-- KEYBIND TOAST -->
+<div id="keybind-toast"></div>
+
+<script>
+function sdk() { return window.maptilerSdk || window.maptilersdk; }
+
+// ── ALERT COLOR MAP ──
+const ALERT_COLORS = {
+  'Tornado Warning':'#FF0000','Tornado Watch':'#FFFF00','Tornado Emergency':'#FF00FF',
+  'Severe Thunderstorm Warning':'#FFA500','Severe Thunderstorm Watch':'#DB7093',
+  'Flash Flood Warning':'#00FF00','Flash Flood Watch':'#2E8B57','Flash Flood Emergency':'#8B0000',
+  'Flood Warning':'#00FF7F','Flood Watch':'#2E8B57','Flood Advisory':'#00CED1',
+  'Winter Storm Warning':'#FF69B4','Winter Storm Watch':'#4169E1','Winter Weather Advisory':'#7B68EE',
+  'Ice Storm Warning':'#8B008B','Blizzard Warning':'#FF4500',
+  'High Wind Warning':'#DAA520','Wind Advisory':'#D2B48C','Dense Fog Advisory':'#708090',
+  'Freeze Warning':'#6495ED','Frost Advisory':'#6495ED',
+  'Heat Advisory':'#FF7F50','Excessive Heat Warning':'#C71585',
+  'Hurricane Warning':'#DC143C','Hurricane Watch':'#FF6347',
+  'Tropical Storm Warning':'#B22222','Special Weather Statement':'#FFE4B5',
+};
+const ALERT_LEGEND = [
+  ['TOR Warn','#FF0000'],['TOR Watch','#FFFF00'],
+  ['SVR Warn','#FFA500'],['FF Warn','#00FF00'],
+  ['Winter','#FF69B4'],['Hurricane','#DC143C'],
+];
+
+// ── PRODUCT LEGEND DEFINITIONS ──
+const PRODUCT_LEGENDS = {
+  N0Q: {
+    name: 'Base Reflectivity',
+    unit: 'dBZ',
+    gradient: 'linear-gradient(to right, #646464, #04e9e7, #019ff4, #0300f4, #02fd02, #01c501, #008e00, #fdf802, #e5bc00, #fd9500, #fd0000, #d40000, #bc0000, #f800fd, #9854c6)',
+    ticks: ['-20', '-10', '0', '10', '20', '30', '40', '50', '60', '70', '75+'],
+  },
+  N0U: {
+    name: 'Base Velocity',
+    unit: 'kt',
+    gradient: 'linear-gradient(to right, #00ecec, #009898, #004848, #000000, #333333, #660000, #cc0000, #ff0000)',
+    ticks: ['-64', '-48', '-32', '-16', '0', '+16', '+32', '+48', '+64'],
+  },
+  N0S: {
+    name: 'Storm Rel. Velocity',
+    unit: 'kt',
+    gradient: 'linear-gradient(to right, #00ecec, #009898, #004848, #000000, #333333, #660000, #cc0000, #ff0000)',
+    ticks: ['-64', '-32', '0', '+32', '+64'],
+  },
+  N0C: {
+    name: 'Correlation Coefficient',
+    unit: 'CC',
+    gradient: 'linear-gradient(to right, #ff00ff, #8b008b, #0000cd, #1e90ff, #00bfff, #00fa9a, #adff2f, #ffff00, #ffa500, #ff0000)',
+    ticks: ['0.2', '0.4', '0.6', '0.7', '0.8', '0.9', '0.95', '1.0'],
+  },
+};
+
+// ── STATE ──
+let map = null;
+let allStations = [];
+let activeStation = null;
+let activeProduct = 'N0Q';
+let radarVisible = true, alertsVisible = true, stationsVisible = true;
+let stationMarkers = [];
+
+// ── IEM TILE URL ──
+function iemTileUrl(stationId, product) {
+  return `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::${stationId}-${product}-0/{z}/{x}/{y}.png`;
+}
+
+// ── INIT ──
+function initApp() {
+  const S = sdk();
+  if (!S) { showErr('MapTiler SDK did not load — check your connection and reload.'); return; }
+  const key = document.getElementById('token-input').value.trim();
+  if (key.length < 8) { showErr('Key too short — paste the full key from MapTiler.'); return; }
+  hideErr();
+  document.getElementById('token-screen').style.display = 'none';
+  showLoading('Initializing map…');
+  S.config.apiKey = key;
+  buildMap(S);
+}
+
+function showErr(msg) { const e = document.getElementById('token-error'); e.textContent = msg; e.style.display = 'block'; }
+function hideErr() { document.getElementById('token-error').style.display = 'none'; }
+function showLoading(msg) { document.getElementById('loading-text').textContent = msg; document.getElementById('loading-overlay').classList.add('show'); }
+function hideLoading() {
+  const el = document.getElementById('loading-overlay');
+  el.classList.add('hide');
+  setTimeout(() => { el.classList.remove('show'); el.classList.remove('hide'); }, 400);
+}
+
+// ── BUILD MAP ──
+function buildMap(S) {
+  map = new S.Map({
+    container: 'map',
+    style: S.MapStyle.DATAVIZ.DARK,
+    center: [-96, 38],
+    zoom: 4,
+  });
+
+  // Compass only, no zoom buttons
+  map.addControl(new S.NavigationControl({ showCompass: true, showZoom: false }), 'bottom-right');
+
+  map.on('load', async () => {
+    showLoading('Loading radar stations…');
+    await loadStations();
+    showLoading('Loading NWS alerts…');
+    await loadAlerts();
+    hideLoading();
+    buildAlertLegend();
+    updateProductLegend(activeProduct);
+    document.getElementById('legend-bar').classList.add('visible');
+  });
+
+  startClock();
+}
+
+// ── LOAD NWS RADAR STATIONS ──
+async function loadStations() {
+  try {
+    const res = await fetch('https://api.weather.gov/radar/stations', {
+      headers: { 'User-Agent': 'StormWatchApp/1.0', 'Accept': 'application/geo+json' }
+    });
+    const data = await res.json();
+    allStations = (data.features || [])
+      .filter(f => f.geometry && f.geometry.type === 'Point' && f.properties.stationIdentifier)
+      .map(f => ({
+        id: f.properties.stationIdentifier,
+        name: f.properties.name || f.properties.stationIdentifier,
+        type: f.properties.radarType || 'WSR-88D',
+        lon: f.geometry.coordinates[0],
+        lat: f.geometry.coordinates[1],
+      }))
+      .sort((a, b) => (a.id || '').localeCompare(b.id || ''));
+
+    document.getElementById('station-count').textContent = allStations.length;
+    renderStationList(allStations);
+    renderStationMarkers(allStations);
+  } catch(e) {
+    console.warn('Station load error:', e);
+    document.getElementById('station-list').innerHTML = '<div style="color:var(--red);font-size:12px;padding:10px 14px">Failed to load stations.</div>';
+  }
+}
+
+// ── STATION LIST ──
+function renderStationList(stations) {
+  const list = document.getElementById('station-list');
+  if (!stations.length) { list.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:10px 14px">None found.</div>'; return; }
+  list.innerHTML = stations.map(s => `
+    <div class="station-item ${activeStation?.id === s.id ? 'active' : ''}" onclick="selectStation('${s.id}')" data-id="${s.id}">
+      <div class="station-dot" style="background:${activeStation?.id === s.id ? '#f97316' : '#38bdf8'}"></div>
+      <div class="station-info">
+        <div class="station-id">${s.id}</div>
+        <div class="station-name">${s.name}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ── STATION MARKERS ──
+function renderStationMarkers(stations) {
+  stationMarkers.forEach(m => m.remove());
+  stationMarkers = [];
+  stations.forEach(s => {
+    const el = document.createElement('div');
+    el.className = `radar-marker ${activeStation?.id === s.id ? 'active' : ''}`;
+    el.title = `${s.id} — ${s.name}`;
+    el.addEventListener('click', () => selectStation(s.id));
+    const marker = new sdk().Marker({ element: el }).setLngLat([s.lon, s.lat]).addTo(map);
+    marker._stationId = s.id;
+    marker._el = el;
+    stationMarkers.push(marker);
+  });
+  if (!stationsVisible) stationMarkers.forEach(m => m._el.style.display = 'none');
+}
+
+// ── SELECT STATION ──
+function selectStation(stationId) {
+  const station = allStations.find(s => s.id === stationId);
+  if (!station) return;
+  activeStation = station;
+
+  stationMarkers.forEach(m => {
+    m._el.className = `radar-marker ${m._stationId === stationId ? 'active' : ''}`;
+  });
+  document.querySelectorAll('.station-item').forEach(el => {
+    const isActive = el.dataset.id === stationId;
+    el.classList.toggle('active', isActive);
+    el.querySelector('.station-dot').style.background = isActive ? '#f97316' : '#38bdf8';
+  });
+
+  map.flyTo({ center: [station.lon, station.lat], zoom: 7, duration: 1200, essential: true });
+
+  document.getElementById('active-station-badge').style.display = 'block';
+  document.getElementById('badge-id').textContent = station.id;
+  document.getElementById('badge-desc').textContent = station.name;
+  document.getElementById('badge-product').textContent = PRODUCT_LEGENDS[activeProduct]?.name || activeProduct;
+
+  loadStationRadar(station, activeProduct);
+}
+
+// ── LOAD RADAR TILES (IEM) ──
+function loadStationRadar(station, product) {
+  const tileUrl = iemTileUrl(station.id, product);
+  const rtEl = document.getElementById('radar-time');
+  rtEl.textContent = `${station.id} · ${product} · ${new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}`;
+  rtEl.style.display = 'block';
+
+  if (map.getSource('radar')) {
+    map.getSource('radar').setTiles([tileUrl]);
+    if (map.getLayer('radar-layer')) {
+      map.setLayoutProperty('radar-layer', 'visibility', radarVisible ? 'visible' : 'none');
+      map.setPaintProperty('radar-layer', 'raster-opacity', 1.0);
+    }
+  } else {
+    map.addSource('radar', { type: 'raster', tiles: [tileUrl], tileSize: 256, attribution: '© Iowa State IEM · NWS' });
+    map.addLayer({ id: 'radar-layer', type: 'raster', source: 'radar', paint: { 'raster-opacity': 1.0 } });
+    if (!radarVisible) map.setLayoutProperty('radar-layer', 'visibility', 'none');
+  }
+}
+
+// ── SET PRODUCT (keybind) ──
+function setProduct(product) {
+  activeProduct = product;
+
+  // Update keybind highlight
+  ['1','2','3','4'].forEach((k, i) => {
+    const key = ['N0Q','N0U','N0S','N0C'][i];
+    const el = document.getElementById('kb-' + (i+1));
+    if (el) el.classList.toggle('active-key', key === product);
+  });
+
+  document.getElementById('badge-product').textContent = PRODUCT_LEGENDS[product]?.name || product;
+  updateProductLegend(product);
+  if (activeStation) loadStationRadar(activeStation, product);
+}
+
+// ── PRODUCT LEGEND BAR ──
+function updateProductLegend(product) {
+  const def = PRODUCT_LEGENDS[product];
+  if (!def) return;
+  document.getElementById('legend-product-name').textContent = def.name;
+  document.getElementById('legend-gradient').style.background = def.gradient;
+  document.getElementById('legend-unit').textContent = def.unit;
+  const ticks = document.getElementById('legend-ticks');
+  ticks.innerHTML = def.ticks.map(t => `<span class="legend-tick">${t}</span>`).join('');
+}
+
+// ── ALERT LEGEND (inline in bar) ──
+function buildAlertLegend() {
+  const row = document.getElementById('alert-legend-row');
+  row.innerHTML = ALERT_LEGEND.map(([label, color]) =>
+    `<div class="al-item"><div class="al-swatch" style="background:${color}"></div><span class="al-label">${label}</span></div>`
+  ).join('');
+}
+
+// ── NWS ALERTS ──
+async function loadAlerts() {
+  try {
+    const res = await fetch(
+      'https://api.weather.gov/alerts/active?status=actual&message_type=alert,update',
+      { headers: { 'User-Agent': 'StormWatchApp/1.0' } }
+    );
+    const data = await res.json();
+    const features = (data.features || []).filter(f => f.geometry);
+    document.getElementById('alert-count').textContent = features.length;
+
+    const geojson = {
+      type: 'FeatureCollection',
+      features: features.map(f => ({
+        ...f,
+        properties: { ...f.properties, fillColor: ALERT_COLORS[f.properties.event] || '#888888' }
+      }))
+    };
+
+    if (map.getSource('alerts')) {
+      map.getSource('alerts').setData(geojson);
+    } else {
+      map.addSource('alerts', { type: 'geojson', data: geojson });
+      map.addLayer({ id: 'alerts-fill', type: 'fill', source: 'alerts', paint: { 'fill-color': ['get','fillColor'], 'fill-opacity': 0.20 } });
+      map.addLayer({ id: 'alerts-border', type: 'line', source: 'alerts', paint: { 'line-color': ['get','fillColor'], 'line-width': 1.5, 'line-opacity': 0.85 } });
+      map.on('click', 'alerts-fill', e => {
+        const p = e.features[0].properties;
+        const color = p.fillColor || '#888';
+        const onset = p.onset ? new Date(p.onset).toLocaleString() : '—';
+        const expires = p.expires ? new Date(p.expires).toLocaleString() : '—';
+        const sev = p.severity || '';
+        const sevColor = sev==='Extreme'?'#ef4444':sev==='Severe'?'#f97316':sev==='Moderate'?'#eab308':'#6b7592';
+        new sdk().Popup({ closeButton: true, maxWidth: '300px' })
+          .setLngLat(e.lngLat)
+          .setHTML(`
+            <div class="popup-event" style="color:${color}">${p.event||'Weather Alert'}</div>
+            <div class="popup-area">${(p.areaDesc||'').slice(0,120)}${(p.areaDesc||'').length>120?'…':''}</div>
+            <div class="popup-time">Onset: ${onset}</div>
+            <div class="popup-time">Expires: ${expires}</div>
+            ${sev?`<span class="popup-severity" style="background:${sevColor}22;color:${sevColor};border:1px solid ${sevColor}44">${sev}</span>`:''}
+          `).addTo(map);
+      });
+      map.on('mouseenter','alerts-fill',()=>map.getCanvas().style.cursor='pointer');
+      map.on('mouseleave','alerts-fill',()=>map.getCanvas().style.cursor='');
+    }
+  } catch(e) { console.warn('Alerts error:', e); }
+}
+
+// ── LAYER TOGGLES ──
+function toggleLayer(type) {
+  if (type === 'radar') {
+    radarVisible = !radarVisible;
+    document.getElementById('toggle-radar').checked = radarVisible;
+    if (map?.getLayer('radar-layer')) map.setLayoutProperty('radar-layer', 'visibility', radarVisible ? 'visible' : 'none');
+  } else if (type === 'alerts') {
+    alertsVisible = !alertsVisible;
+    document.getElementById('toggle-alerts').checked = alertsVisible;
+    const v = alertsVisible ? 'visible' : 'none';
+    if (map?.getLayer('alerts-fill')) map.setLayoutProperty('alerts-fill', 'visibility', v);
+    if (map?.getLayer('alerts-border')) map.setLayoutProperty('alerts-border', 'visibility', v);
+  } else if (type === 'stations') {
+    stationsVisible = !stationsVisible;
+    document.getElementById('toggle-stations').checked = stationsVisible;
+    stationMarkers.forEach(m => m._el.style.display = stationsVisible ? 'block' : 'none');
+  }
+}
+
+// ── REFRESH ──
+function refreshAll() {
+  if (!map) return;
+  const btn = document.getElementById('refresh-btn');
+  btn.style.color = 'var(--accent)';
+  setTimeout(()=>btn.style.color='', 1000);
+  loadAlerts();
+  if (activeStation) loadStationRadar(activeStation, activeProduct);
+}
+
+// ── CLOCK ──
+function startClock() {
+  const tick = () => {
+    const now = new Date();
+    // Local time with timezone abbreviation
+    const localStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const tzAbbr = now.toLocaleTimeString('en-US', { timeZoneName: 'short' }).split(' ').pop();
+    document.getElementById('clock-local').textContent = `${localStr} ${tzAbbr}`;
+
+    // Zulu (UTC)
+    const zuluH = String(now.getUTCHours()).padStart(2, '0');
+    const zuluM = String(now.getUTCMinutes()).padStart(2, '0');
+    const zuluS = String(now.getUTCSeconds()).padStart(2, '0');
+    document.getElementById('clock-zulu').innerHTML = `${zuluH}${zuluM}${zuluS}<span class="clock-z-label">Z</span>`;
+  };
+  tick();
+  setInterval(tick, 1000);
+  setInterval(refreshAll, 5 * 60 * 1000);
+}
+
+// ── KEYBINDS ──
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  const keyMap = { '1': 'N0Q', '2': 'N0U', '3': 'N0S', '4': 'N0C' };
+  if (keyMap[e.key]) {
+    setProduct(keyMap[e.key]);
+    toast(`[${e.key}]  ${PRODUCT_LEGENDS[keyMap[e.key]].name}`);
+  }
+  if (e.key === 'r' || e.key === 'R') { refreshAll(); toast('[R]  Refreshing…'); }
+});
+
+function toast(msg) {
+  const el = document.getElementById('keybind-toast');
+  el.textContent = msg;
+  el.style.opacity = '1';
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.style.opacity = '0', 1400);
+}
+
+document.getElementById('token-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') initApp();
+});
+</script>
+</body>
+</html>
